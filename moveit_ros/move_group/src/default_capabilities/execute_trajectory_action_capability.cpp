@@ -50,6 +50,22 @@ static const rclcpp::Logger LOGGER =
 MoveGroupExecuteTrajectoryAction::MoveGroupExecuteTrajectoryAction() : MoveGroupCapability("ExecuteTrajectoryAction")
 {
 }
+/*
+MoveGroupExecuteTrajectoryAction::~MoveGroupExecuteTrajectoryAction()
+{
+  std::lock_guard<std::mutex> slock(active_goals_mutex_);
+  // clear any remaining thread
+  auto it = active_goals_.begin();
+  while (it != active_goals_.end())
+  {
+    cancelGoal(it->goal_handle_, "");
+    if (it->thread_.joinable())
+      it->thread_.join();
+    it++;
+  }
+  active_goals_.clear();
+}
+*/
 
 void MoveGroupExecuteTrajectoryAction::initialize()
 {
@@ -63,7 +79,9 @@ void MoveGroupExecuteTrajectoryAction::initialize()
       node->get_node_waitables_interface(), EXECUTE_ACTION_NAME,
       [](const rclcpp_action::GoalUUID& /*unused*/, std::shared_ptr<const ExecTrajectory::Goal> /*unused*/) {
         RCLCPP_INFO(LOGGER, "Received goal request");
-        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+        return rclcpp_action::GoalResponse::ACCE  execute_action_server_ = std::make_unique<ExecuteTrajectoryActionServer>(
+      root_node_handle_, EXECUTE_ACTION_NAME, [this](const auto& goal) { goalCallback(goal); },
+      [this](const auto& goal) { cancelCallback(goal); }, false);PT_AND_EXECUTE;
       },
       [](const std::shared_ptr<ExecTrajectoryGoal>& g) {
         RCLCPP_INFO(LOGGER, "Received request to cancel goal");

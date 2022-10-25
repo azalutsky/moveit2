@@ -50,9 +50,25 @@ namespace move_group
 static const rclcpp::Logger LOGGER =
     rclcpp::get_logger("moveit_move_group_default_capabilities.move_action_capability");
 
-MoveGroupMoveAction::MoveGroupMoveAction()
-  : MoveGroupCapability("MoveAction"), move_state_(IDLE), preempt_requested_{ false }
+MoveGroupMoveAction::MoveGroupMoveAction() : MoveGroupCapability("MoveAction"), move_state_(IDLE)
 {
+}
+
+MoveGroupMoveAction::~MoveGroupMoveAction()
+{
+  std::lock_guard<std::mutex> slock(active_goals_mutex_);
+  // clear any remaining thread
+  auto it = active_goals_.begin();
+  while (it != active_goals_.end())
+  {
+    auto& goal_handle = it->first;
+    auto& goal_thread = it->second;
+    cancelGoal(goal_handle, "");
+    if (goal_thread->joinable())
+      goal_thread->join();
+    it++;
+  }
+  active_goals_.clear();
 }
 
 void MoveGroupMoveAction::initialize()
@@ -61,6 +77,7 @@ void MoveGroupMoveAction::initialize()
   using std::placeholders::_1;
   using std::placeholders::_2;
 
+  //TODO azalutsky : Continue here, discern differences between these functions and keep porting
   auto node = context_->moveit_cpp_->getNode();
   execute_action_server_ = rclcpp_action::create_server<MGAction>(
       node, MOVE_ACTION,

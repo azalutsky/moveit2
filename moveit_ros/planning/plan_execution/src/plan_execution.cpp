@@ -78,7 +78,7 @@ plan_execution::PlanExecution::PlanExecution(
 {
   if (!trajectory_execution_manager_)
     trajectory_execution_manager_ = std::make_shared<trajectory_execution_manager::TrajectoryExecutionManager>(
-        node_, planning_scene_monitor_->getRobotModel(), planning_scene_monitor_->getStateMonitor());
+        node_, planning_scene_monitor_->getRobotModel(), planning_scene_monitor_);
 
   default_max_replan_attempts_ = 5;
 
@@ -351,6 +351,8 @@ moveit_msgs::msg::MoveItErrorCodes plan_execution::PlanExecution::executeAndMoni
   execution_complete_ = false;
 
   // push the trajectories we have slated for execution to the trajectory execution manager
+  std::vector<moveit_msgs::RobotTrajectory> trajectories;
+  std::vector<std::vector<std::string>> controllers;
   int prev = -1;
   for (std::size_t i = 0; i < plan.plan_components_.size(); ++i)
   {
@@ -390,13 +392,8 @@ moveit_msgs::msg::MoveItErrorCodes plan_execution::PlanExecution::executeAndMoni
     moveit_msgs::msg::RobotTrajectory msg;
     plan.plan_components_[i].trajectory_->getRobotTrajectoryMsg(msg);
     if (!trajectory_execution_manager_->push(msg, plan.plan_components_[i].controller_names_))
-    {
-      trajectory_execution_manager_->clear();
-      RCLCPP_ERROR(LOGGER, "Apparently trajectory initialization failed");
-      execution_complete_ = true;
-      result.val = moveit_msgs::msg::MoveItErrorCodes::CONTROL_FAILED;
-      return result;
-    }
+    trajectories.push_back(msg);
+    controllers.push_back(plan.plan_components_[i].controller_names_);
   }
 
   if (!trajectory_monitor_ && planning_scene_monitor_->getStateMonitor())
@@ -413,9 +410,33 @@ moveit_msgs::msg::MoveItErrorCodes plan_execution::PlanExecution::executeAndMoni
     trajectory_monitor_->startTrajectoryMonitor();
 
   // start a trajectory execution thread
-  trajectory_execution_manager_->execute(
-      boost::bind(&PlanExecution::doneWithTrajectoryExecution, this, boost::placeholders::_1),
-      boost::bind(&PlanExecution::successfulTrajectorySegmentExecution, this, &plan, boost::placeholders::_1));
+   if (trajectory_execution_manager_->getEnableSimultaneousExecution())
+  {
+    trajectory_execution_manager_->push(
+        trajectories, controllers,
+        [this](const moveit_controller_manager::ExecutionStatus& status) { doneWithTrajectoryExecution(status); },
+        [this, &plan](std::size_t index) { successfulTrajectorySegmentExecution(plan, index); });
+  }
+  else
+  {
+    if (!trajectory_execution_manager_->push(trajectories, controllers))
+    {
+      trajectory_execution_manager_->clear();
+      ROS_ERROR_STREAM_NAMED("plan_execution", "Apparently trajectory initialization failed");
+      execution_complete_ = true;
+      result.val = moveit_msgs::MoveItErrorCodes::CONTROL_FAILED;
+      return result;
+    }
+    /*
+    trajectory_execution_manager_->execute(
+        [this](const moveit_controller_manager::ExecutionStatus& status) { doneWithTrajectoryExecution(status); },
+        [this, &plan](std::size_t index) { successfulTrajectorySegmentExecution(plan, index); });
+    */
+    // TODO: azalutsky, test this port
+    trajectory_execution_manager_->execute(
+        boost::bind(&PlanExecution::doneWithTrajectoryExecution, this, boost::placeholders::_1),
+        boost::bind(&PlanExecution::successfulTrajectorySegmentExecution, this, &plan, boost::placeholders::_1));
+  }
   // wait for path to be done, while checking that the path does not become invalid
   rclcpp::WallRate r(100);
   path_became_invalid_ = false;

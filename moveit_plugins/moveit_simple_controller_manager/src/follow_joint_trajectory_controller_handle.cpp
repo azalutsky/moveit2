@@ -41,9 +41,11 @@ using namespace std::placeholders;
 
 namespace moveit_simple_controller_manager
 {
-bool FollowJointTrajectoryControllerHandle::sendTrajectory(const moveit_msgs::msg::RobotTrajectory& trajectory)
+bool FollowJointTrajectoryControllerHandle::sendTrajectory(const moveit_msgs::RobotTrajectory& trajectory,
+                                                           const ExecutionCompleteCallback& callback)
 {
   RCLCPP_DEBUG_STREAM(LOGGER, "new trajectory to " << name_);
+  execution_complete_callback_ = callback;
 
   if (!controller_action_client_)
     return false;

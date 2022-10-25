@@ -61,9 +61,10 @@ public:
   {
   }
 
-  bool sendTrajectory(const moveit_msgs::msg::RobotTrajectory& trajectory) override
+  bool sendTrajectory(const moveit_msgs::RobotTrajectory& trajectory, const ExecutionCompleteCallback& callback) override
   {
     RCLCPP_DEBUG_STREAM(LOGGER, "Received new trajectory for " << name_);
+    execution_complete_callback_ = callback;
 
     if (!controller_action_client_)
       return false;
